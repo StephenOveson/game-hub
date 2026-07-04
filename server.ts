@@ -4,10 +4,10 @@ import { WebSocketServer } from "ws";
 import { attachRoomServer } from "./src/server/rooms";
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? "0.0.0.0";
+const bindHost = process.env.BIND_HOST ?? "0.0.0.0";
 const port = parseInt(process.env.PORT ?? "3000", 10);
 
-const app = next({ dev, hostname, port });
+const app = next({ dev, hostname: bindHost, port });
 const handleRequest = app.getRequestHandler();
 
 async function main() {
@@ -31,9 +31,9 @@ async function main() {
     }
   });
 
-  server.listen(port, hostname, () => {
+  server.listen(port, bindHost, () => {
     console.log(
-      `> Liar's Dice ready on http://${hostname}:${port} (ws endpoint: /ws)`
+      `> Liar's Dice ready on http://${bindHost}:${port} (ws endpoint: /ws)`
     );
   });
 }
