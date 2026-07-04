@@ -23,7 +23,6 @@ export default function Room({
 }) {
   const { code } = use(params);
   const search = useSearchParams();
-  const router = useRouter();
   const name = search.get("name") ?? "Player";
 
   const joinMessage = useMemo<ClientMessage>(() => {
@@ -45,9 +44,9 @@ export default function Room({
   // Once a created room has a real code, put it in the URL for sharing
   useEffect(() => {
     if (code === "new" && state?.code) {
-      router.replace(`/room/${state.code}?name=${encodeURIComponent(name)}`);
+      window.history.replaceState(null, "", `/room/${state.code}?name=${encodeURIComponent(name)}`);
     }
-  }, [code, state?.code, router, name]);
+  }, [code, state?.code, name]);
 
   if (!state) {
     return (
