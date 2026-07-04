@@ -1,10 +1,11 @@
 "use client";
 
 import { use, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useGameSocket } from "../../../hooks/useGameSocket";
 import { LiarsGameView } from "../../../components/LiarsGameView";
 import { GolfGameView } from "../../../components/GolfGameView";
+import { ChatPanel } from "../../../components/ChatPanel";
 import type {
   ClientMessage,
   GameType,
@@ -38,13 +39,20 @@ export default function Room({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const { state, status, error, clearError, sendMessage } =
+  const { state, chat, status, error, clearError, sendMessage } =
     useGameSocket(joinMessage);
 
-  // Once a created room has a real code, put it in the URL for sharing
+  // Once a created room has a real code, put it in the URL for sharing.
+  // history.replaceState only rewrites the address bar — router.replace
+  // would remount the page on the new dynamic segment, dropping the live
+  // socket and racing the rejoin against lobby cleanup on the server.
   useEffect(() => {
     if (code === "new" && state?.code) {
-      window.history.replaceState(null, "", `/room/${state.code}?name=${encodeURIComponent(name)}`);
+      window.history.replaceState(
+        null,
+        "",
+        `/room/${state.code}?name=${encodeURIComponent(name)}`
+      );
     }
   }, [code, state?.code, name]);
 
@@ -102,6 +110,7 @@ export default function Room({
           connection lost — retrying…
         </div>
       )}
+      <ChatPanel chat={chat} youId={state.you.id} sendMessage={sendMessage} />
     </main>
   );
 }

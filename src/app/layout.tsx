@@ -1,9 +1,20 @@
 import type { Metadata, Viewport } from "next";
+import { PwaRegister } from "../components/PwaRegister";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Card Room — Golf & Liar's Dice",
   description: "Real-time multiplayer Golf and Liar's Dice over WebSockets.",
+  applicationName: "Card Room",
+  icons: {
+    icon: "/favicon.png",
+    apple: "/apple-touch-icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Card Room",
+  },
 };
 
 export const viewport: Viewport = {
@@ -11,6 +22,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  themeColor: "#120d08",
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -27,7 +40,10 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <PwaRegister />
+        {children}
+      </body>
     </html>
   );
 }

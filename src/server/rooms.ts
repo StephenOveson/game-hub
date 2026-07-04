@@ -3,10 +3,11 @@ import type { WebSocket, WebSocketServer } from "ws";
 import { LiarsGame } from "./games/liars";
 import { GolfGame } from "./games/golf";
 import type {
+  ChatEntry,
   ClientMessage,
   ServerMessage,
 } from "../shared/protocol";
-import { MAX_PLAYERS } from "../shared/protocol";
+import { EMOTES, MAX_PLAYERS } from "../shared/protocol";
 
 type Engine = LiarsGame | GolfGame;
 
@@ -15,7 +16,13 @@ interface Room {
   engine: Engine;
   sockets: Map<string, WebSocket>; // playerId -> socket
   lastActivity: number;
+  chat: ChatEntry[];
+  lastChatAt: Map<string, number>; // playerId -> ts, for rate limiting
 }
+
+const CHAT_LOG_MAX = 50;
+const CHAT_MIN_INTERVAL_MS = 600;
+const CHAT_TEXT_MAX = 200;
 
 const rooms = new Map<string, Room>();
 
@@ -51,6 +58,26 @@ function broadcast(room: Room) {
   for (const [playerId, ws] of room.sockets) {
     send(ws, room.engine.stateFor(playerId, room.code));
   }
+}
+
+function pushChat(room: Room, entry: ChatEntry) {
+  room.lastActivity = Date.now();
+  room.chat.push(entry);
+  if (room.chat.length > CHAT_LOG_MAX)
+    room.chat.splice(0, room.chat.length - CHAT_LOG_MAX);
+  for (const ws of room.sockets.values()) send(ws, { type: "chat", entry });
+}
+
+/** Shared validation for chat + emote sends. Returns the seat or an error string. */
+function chatGate(room: Room, pid: string): { name: string } | string {
+  const seat = room.engine.byId(pid);
+  if (!seat) return "You're not seated at this table.";
+  const now = Date.now();
+  const last = room.lastChatAt.get(pid) ?? 0;
+  if (now - last < CHAT_MIN_INTERVAL_MS)
+    return "You're sending messages too quickly.";
+  room.lastChatAt.set(pid, now);
+  return { name: seat.name };
 }
 
 interface SocketContext {
@@ -92,12 +119,33 @@ export function attachRoomServer(wss: WebSocketServer) {
     ws.on("close", () => {
       const room = ctx.roomCode ? rooms.get(ctx.roomCode) : null;
       if (!room || !ctx.playerId) return;
+      const pid = ctx.playerId;
       // Only clear the socket if it's still the one registered for this seat
-      if (room.sockets.get(ctx.playerId) === ws)
-        room.sockets.delete(ctx.playerId);
-      room.engine.removePlayer(ctx.playerId);
-      if (room.engine.players.length === 0) rooms.delete(room.code);
-      else broadcast(room);
+      if (room.sockets.get(pid) === ws) room.sockets.delete(pid);
+      const seat = room.engine.byId(pid);
+      if (!seat) return;
+      seat.connected = false;
+
+      if (room.engine.inLobby()) {
+        // Grace period: page refreshes and client-side navigations drop the
+        // socket for a moment. Removing the seat (and possibly the room)
+        // immediately would race the reconnect — the exact failure mode of
+        // "create a room, get Room not found". Give the seat 10s to be
+        // reclaimed before actually vacating it.
+        broadcast(room);
+        setTimeout(() => {
+          if (rooms.get(room.code) !== room) return; // room already gone
+          const s = room.engine.byId(pid);
+          if (!s || s.connected || room.sockets.has(pid)) return; // reclaimed
+          room.engine.removePlayer(pid);
+          if (room.engine.players.length === 0) rooms.delete(room.code);
+          else broadcast(room);
+        }, 10_000);
+      } else {
+        // Mid-game: seat is preserved for reclaim; the game waits.
+        room.engine.removePlayer(pid);
+        broadcast(room);
+      }
     });
   });
 }
@@ -118,6 +166,8 @@ function handleMessage(ws: WebSocket, ctx: SocketContext, msg: ClientMessage) {
       engine,
       sockets: new Map(),
       lastActivity: Date.now(),
+      chat: [],
+      lastChatAt: new Map(),
     };
     rooms.set(code, room);
     joinRoom(ws, ctx, room, sanitizeName(msg.name));
@@ -142,6 +192,7 @@ function handleMessage(ws: WebSocket, ctx: SocketContext, msg: ClientMessage) {
           playerId: seat.id,
           token: seat.token,
         });
+        send(ws, { type: "chat_history", entries: room.chat });
         broadcast(room);
         return;
       }
@@ -160,6 +211,40 @@ function handleMessage(ws: WebSocket, ctx: SocketContext, msg: ClientMessage) {
   if (!room || !ctx.playerId) return sendError(ws, "You're not in a room.");
   const pid = ctx.playerId;
   const { engine } = room;
+
+  // ── Chat & emotes (room-level, engine-agnostic) ──
+  if (msg.type === "chat" || msg.type === "emote") {
+    const gate = chatGate(room, pid);
+    if (typeof gate === "string") return sendError(ws, gate);
+
+    if (msg.type === "chat") {
+      const text = String(msg.text ?? "")
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\u0000-\u001f\u007f]/g, "")
+        .trim()
+        .slice(0, CHAT_TEXT_MAX);
+      if (!text) return;
+      pushChat(room, {
+        id: randomUUID(),
+        playerId: pid,
+        name: gate.name,
+        kind: "text",
+        text,
+        ts: Date.now(),
+      });
+    } else {
+      if (!(msg.emote in EMOTES)) return sendError(ws, "Unknown emote.");
+      pushChat(room, {
+        id: randomUUID(),
+        playerId: pid,
+        name: gate.name,
+        kind: "emote",
+        emote: msg.emote,
+        ts: Date.now(),
+      });
+    }
+    return;
+  }
 
   let result;
   switch (msg.type) {
@@ -233,5 +318,6 @@ function joinRoom(
   ctx.playerId = playerId;
   room.sockets.set(playerId, ws);
   send(ws, { type: "joined", code: room.code, playerId, token });
+  send(ws, { type: "chat_history", entries: room.chat });
   broadcast(room);
 }

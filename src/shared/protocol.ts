@@ -130,10 +130,52 @@ export interface GolfState {
   reveal: GolfReveal | null;
 }
 
+
+/* ────────────────────────── Chat & emotes ────────────────────────── */
+
+export type EmoteId = "gg" | "nice" | "wow" | "lol" | "cry" | "luck";
+
+export const EMOTES: Record<EmoteId, { icon: string; label: string }> = {
+  gg: { icon: "🏆", label: "GG" },
+  nice: { icon: "👏", label: "Nice play" },
+  wow: { icon: "🤯", label: "No way" },
+  lol: { icon: "😂", label: "Ha!" },
+  cry: { icon: "😭", label: "Pain" },
+  luck: { icon: "🍀", label: "Pure luck" },
+};
+
+/** Always-visible quick buttons: winning, nice play, losing. */
+export const QUICK_EMOTES: EmoteId[] = ["gg", "nice", "cry"];
+
+export interface ChatEntry {
+  id: string;
+  playerId: string;
+  name: string;
+  kind: "text" | "emote";
+  text?: string;
+  emote?: EmoteId;
+  ts: number;
+}
+
+export interface ChatMessage {
+  type: "chat";
+  entry: ChatEntry;
+}
+
+export interface ChatHistoryMessage {
+  type: "chat_history";
+  entries: ChatEntry[];
+}
+
 /* ────────────────────────── Unions ────────────────────────── */
 
 export type StateMessage = LiarsState | GolfState;
-export type ServerMessage = StateMessage | JoinedMessage | ErrorMessage;
+export type ServerMessage =
+  | StateMessage
+  | JoinedMessage
+  | ErrorMessage
+  | ChatMessage
+  | ChatHistoryMessage;
 
 export type ClientMessage =
   | { type: "create_room"; game: GameType; name: string; onesWild?: boolean }
@@ -151,6 +193,9 @@ export type ClientMessage =
   // Liar's Dice actions
   | { type: "bid"; qty: number; face: number }
   | { type: "challenge" }
+  // Chat & emotes
+  | { type: "chat"; text: string }
+  | { type: "emote"; emote: EmoteId }
   // Golf actions
   | { type: "golf_flip"; slot: number }
   | { type: "golf_draw" }

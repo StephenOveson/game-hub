@@ -102,3 +102,52 @@ Dropping in Vitest to make those checks permanent is the natural next step.
   A turn timer with auto-play/skip is the natural fix.
 - **No spectators or late joins** once a game starts.
 - **No persistence/accounts** — rooms are throwaway by design.
+
+## Render deployment checklist
+
+- Service type must be **Web Service** (Node runtime), not Static Site.
+- Build command: `npm ci && npm run build` · Start command: `npm start`.
+- Don't set a `HOSTNAME` env var, and don't bind to it — Docker runtimes set
+  it to the container's name. This server binds `0.0.0.0` (override with
+  `BIND_HOST` only if you know why).
+- If you set `NODE_ENV=production` as an env var, installs skip
+  devDependencies — `tsx` lives in `dependencies` here for exactly that
+  reason.
+- A 502 with a silent live tail means the proxy can't reach the process:
+  check the **deploy logs** (not live tail) for the boot line, and verify
+  the port your logs mention matches Render's injected `PORT`.
+
+## Chat & emotes
+
+Every room has a table chat, live in the lobby and all game phases. Three
+quick-emote buttons float beside the chat toggle for the moments that matter
+— 🏆 GG, 👏 Nice play, 😭 Pain — with the full emote set and free text in the
+drawer. Messages arrive as toasts while the drawer is closed, with an unread
+badge on the toggle.
+
+Server-side: chat is room-level (`rooms.ts`), so the game engines stay pure.
+The log is capped at 50 entries, replayed to joining/reconnecting players via
+`chat_history`, text is length-capped and control-char-stripped, emote ids
+are validated against the shared `EMOTES` table, and sends are rate-limited
+to one per 600ms per seat.
+
+## PWA / install to home screen
+
+The app ships as an installable PWA: `src/app/manifest.ts` (typed App Router
+manifest), generated icons in `public/` (regular + maskable + apple-touch),
+standalone display with the tavern theme color, and `viewportFit: cover` so
+the felt extends under notches on installed devices.
+
+The service worker (`public/sw.js`) is **deliberately minimal**: it only
+intercepts navigation requests, network-first with a cached `/offline`
+fallback. It never caches JS/CSS chunks — a live WebSocket game gains nothing
+from offline asset caching, and stale-chunk bugs after deploys are the #1 way
+PWAs go wrong with Next. If you ever add heavier caching, bump the `CACHE`
+version string on every deploy.
+
+Install paths: Android Chrome shows an install prompt automatically (HTTPS +
+manifest). iOS Safari: Share → **Add to Home Screen** — Safari uses
+`apple-touch-icon.png` and the `appleWebApp` metadata. Note the standalone
+iOS mode drops Safari's tab bar, so the reconnect/seat-reclaim flow matters
+more there: backgrounding the app drops the socket, and the existing
+exponential-backoff reclaim brings the seat back on return.

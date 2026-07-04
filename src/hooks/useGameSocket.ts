@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  ChatEntry,
   ClientMessage,
   ServerMessage,
   StateMessage,
@@ -46,6 +47,7 @@ function wsUrl() {
  */
 export function useGameSocket(joinMessage: ClientMessage | null) {
   const [state, setState] = useState<StateMessage | null>(null);
+  const [chat, setChat] = useState<ChatEntry[]>([]);
   const [status, setStatus] = useState<Status>("connecting");
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -86,6 +88,11 @@ export function useGameSocket(joinMessage: ClientMessage | null) {
         }
         if (msg.type === "state") {
           setState(msg);
+        } else if (msg.type === "chat") {
+          setChat((prev) => [...prev.slice(-99), msg.entry]);
+        } else if (msg.type === "chat_history") {
+          // Authoritative on (re)join — replaces any stale local log
+          setChat(msg.entries);
         } else if (msg.type === "joined") {
           saveSeat(msg.code, { playerId: msg.playerId, token: msg.token });
           // After creating a room we switch future reconnects to join_room
@@ -127,5 +134,5 @@ export function useGameSocket(joinMessage: ClientMessage | null) {
 
   const clearError = useCallback(() => setError(null), []);
 
-  return { state, status, error, clearError, sendMessage };
+  return { state, chat, status, error, clearError, sendMessage };
 }

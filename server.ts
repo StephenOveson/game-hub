@@ -4,6 +4,10 @@ import { WebSocketServer } from "ws";
 import { attachRoomServer } from "./src/server/rooms";
 
 const dev = process.env.NODE_ENV !== "production";
+// Bind address: MUST be 0.0.0.0 on container platforms (Render, Fly,
+// Railway) so the platform proxy can reach the process. Do NOT read
+// process.env.HOSTNAME here — Docker-based runtimes set HOSTNAME to the
+// container's name, which hijacks the bind address and causes 502s.
 const bindHost = process.env.BIND_HOST ?? "0.0.0.0";
 const port = parseInt(process.env.PORT ?? "3000", 10);
 
@@ -12,7 +16,9 @@ const handleRequest = app.getRequestHandler();
 
 async function main() {
   await app.prepare();
-  const handleUpgrade = app.getUpgradeHandler(); // Next's own upgrades (HMR in dev)
+  // Must be created after prepare() — getUpgradeHandler eagerly
+  // initializes Next's underlying server and throws otherwise.
+  const handleUpgrade = app.getUpgradeHandler();
 
   const server = createServer((req, res) => handleRequest(req, res));
   const wss = new WebSocketServer({ noServer: true });
@@ -33,7 +39,7 @@ async function main() {
 
   server.listen(port, bindHost, () => {
     console.log(
-      `> Liar's Dice ready on http://${bindHost}:${port} (ws endpoint: /ws)`
+      `> Card Room ready on http://localhost:${port} (ws endpoint: /ws)`
     );
   });
 }
